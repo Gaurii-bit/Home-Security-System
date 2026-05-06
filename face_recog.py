@@ -5,7 +5,7 @@ Implements face detection, feature extraction, and identity recognition
 
 import cv2
 import numpy as np
-import face_recognition
+from deepface import DeepFace
 from typing import List, Tuple, Optional, Dict
 import os
 
@@ -24,7 +24,7 @@ class FaceRecognitionEngine:
         
     def detect_faces(self, frame: np.ndarray) -> List[Tuple[int, int, int, int]]:
         """
-        Detect faces in a frame
+        Detect faces in a frame using DeepFace
         
         Args:
             frame: Input image (BGR format from OpenCV)
@@ -32,13 +32,33 @@ class FaceRecognitionEngine:
         Returns:
             List of face locations as (top, right, bottom, left)
         """
-        # Convert BGR to RGB for face_recognition library
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
-        # Detect faces
-        face_locations = face_recognition.face_locations(rgb_frame, model='hog')
-        
-        return face_locations
+        try:
+            # DeepFace.extract_faces expects BGR array and converts it internally
+            # Using opencv backend for speed
+            face_objs = DeepFace.extract_faces(
+                img_path=frame, 
+                detector_backend='opencv', 
+                enforce_detection=True,
+                align=False
+            )
+            
+            locations = []
+            for face_obj in face_objs:
+                area = face_obj['facial_area']
+                # Convert to (top, right, bottom, left) format
+                top = area['y']
+                right = area['x'] + area['w']
+                bottom = area['y'] + area['h']
+                left = area['x']
+                locations.append((top, right, bottom, left))
+                
+            return locations
+        except ValueError:
+            # ValueError is raised when no faces are found
+            return []
+        except Exception as e:
+            print(f"[ERROR] Face detection failed: {e}")
+            return []
     
     def extract_face_region(self, frame: np.ndarray, location: Tuple[int, int, int, int]) -> np.ndarray:
         """
@@ -80,26 +100,51 @@ class FaceRecognitionEngine:
         
         return normalized
     
-    def extract_features(self, frame: np.ndarray, face_location: Tuple[int, int, int, int]) -> np.ndarray:
+    def extract_features(self, frame: np.ndarray, face_location: Tuple[int, int, int, int]) -> Optional[np.ndarray]:
         """
-        Extract feature embedding from face
+        Extract feature embedding from face using DeepFace (Facenet)
         
         Args:
             frame: Input image
-            face_location: Face location
+            face_location: Face location (top, right, bottom, left)
             
         Returns:
             128-dimensional embedding vector
         """
-        # Convert to RGB
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        top, right, bottom, left = face_location
+        # Add a small margin to ensure face is fully captured for the model
+        h, w = frame.shape[:2]
+        margin_y = int((bottom - top) * 0.1)
+        margin_x = int((right - left) * 0.1)
         
-        # Extract encoding (128-d embedding)
-        encodings = face_recognition.face_encodings(rgb_frame, [face_location])
+        # Safe crop with margins
+        crop_top = max(0, top - margin_y)
+        crop_bottom = min(h, bottom + margin_y)
+        crop_left = max(0, left - margin_x)
+        crop_right = min(w, right + margin_x)
         
-        if len(encodings) > 0:
-            return encodings[0]
-        else:
+        face_img = frame[crop_top:crop_bottom, crop_left:crop_right]
+        
+        if face_img.size == 0:
+            return None
+            
+        try:
+            # We use Facenet which gives a 128-dimensional embedding, matching our DB structure
+            # We skip detection here because we already cropped the face
+            objs = DeepFace.represent(
+                img_path=face_img, 
+                model_name="Facenet", 
+                detector_backend="skip", 
+                enforce_detection=False
+            )
+            
+            if len(objs) > 0:
+                embedding = objs[0]['embedding']
+                return np.array(embedding, dtype=np.float32)
+            
+            return None
+        except Exception as e:
+            print(f"[ERROR] Feature extraction failed: {e}")
             return None
     
     def compute_similarity(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
@@ -239,7 +284,9 @@ class FaceRecognitionEngine:
             # Choose color based on authorization
             if is_authorized:
                 color = (0, 255, 0)  # Green for authorized
-                label = f"{user_id} ({similarity:.2f})"
+                name = result.get('name', user_id)
+                role = result.get('role', '')
+                label = f"{name} | {role} ({similarity:.2f})"
             else:
                 color = (0, 0, 255)  # Red for unknown
                 label = f"Unknown ({similarity:.2f})"

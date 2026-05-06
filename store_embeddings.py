@@ -286,7 +286,7 @@ def show_mongodb_storage(system):
     }
     
     The embedding is a 128-dimensional face feature vector extracted
-    using the dlib face recognition model. This vector uniquely
+    using the DeepFace (Facenet) model. This vector uniquely
     represents the person's facial features and is used for
     matching during recognition.
     """)

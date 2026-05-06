@@ -196,6 +196,15 @@ class IntelligentSecuritySystem:
             similarity = face_result['similarity']
             location = face_result['location']
             
+            # Fetch user details for display
+            if is_authorized_face:
+                user_doc = self.db.get_user(user_id)
+                face_result['name'] = user_doc['name'] if user_doc else user_id
+                face_result['role'] = user_doc['role'] if user_doc else 'Unknown Role'
+            else:
+                face_result['name'] = 'Unknown'
+                face_result['role'] = 'None'
+            
             # Step 6-7: Behavioral Analysis
             self.behavioral_analyzer.track_appearance(user_id, timestamp, location)
             behavioral_analysis = self.behavioral_analyzer.get_comprehensive_analysis(
@@ -226,6 +235,8 @@ class IntelligentSecuritySystem:
             # Combine all results
             complete_result = {
                 'user_id': user_id,
+                'name': face_result['name'],
+                'role': face_result['role'],
                 'timestamp': timestamp,
                 'face_recognition': {
                     'is_recognized': is_authorized_face,
