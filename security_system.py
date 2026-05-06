@@ -68,8 +68,9 @@ class IntelligentSecuritySystem:
         print("6. Initializing Adaptive Response Engine...")
         self.response_engine = ResponseEngine()
         
-        # Load known faces from database
+        # Load known faces and roles from database
         self._load_known_faces()
+        self._load_user_roles()
         
         print("\n[OK] System Initialization Complete\n")
     
@@ -88,6 +89,17 @@ class IntelligentSecuritySystem:
             self.face_engine.load_embeddings(embeddings_dict)
         else:
             print("  No stored embeddings found in database")
+            
+    def _load_user_roles(self):
+        """Load user roles into RBAC engine from database"""
+        users = self.db.get_all_users()
+        if users:
+            for user in users:
+                # Default to guest if role not found
+                self.rbac_engine.assign_role(user['user_id'], user.get('role', 'guest'))
+            print(f"  Loaded roles for {len(users)} users")
+        else:
+            print("  No users found in database to load roles")
     
     def register_user(self, user_id: str, name: str, email: str, 
                      role: str, face_image: np.ndarray) -> bool:
